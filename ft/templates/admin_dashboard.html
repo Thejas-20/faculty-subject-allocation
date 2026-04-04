@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Admin Dashboard – Faculty Timetable System</title>
+  <meta name="description" content="Admin panel for managing faculty, subjects, preferences, allocations and timetable generation."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body class="dashboard-page">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">🎓</span>
+      <span class="brand-text">FacultyMS</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#faculty-section" class="nav-link active" onclick="showSection('faculty-section',this)">
+        <span class="nav-icon">👨‍🏫</span> Faculty
+      </a>
+      <a href="#subjects-section" class="nav-link" onclick="showSection('subjects-section',this)">
+        <span class="nav-icon">📚</span> Subjects
+      </a>
+      <a href="#prefs-section" class="nav-link" onclick="showSection('prefs-section',this)">
+        <span class="nav-icon">❤️</span> Preferences
+      </a>
+      <a href="#alloc-section" class="nav-link" onclick="showSection('alloc-section',this)">
+        <span class="nav-icon">🔗</span> Allocations
+      </a>
+      <a href="{{ url_for('view_timetable') }}" class="nav-link">
+        <span class="nav-icon">📅</span> Timetable
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-badge">
+        <span class="user-avatar">A</span>
+        <div>
+          <p class="user-name">{{ session.username }}</p>
+          <p class="user-role">Administrator</p>
+        </div>
+      </div>
+      <a href="{{ url_for('logout') }}" class="logout-btn">⏻ Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+    <header class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">☰</button>
+      <h2 class="page-title" id="pageTitle">Faculty Management</h2>
+      <div class="topbar-actions">
+        <button type="button" class="btn-action btn-assign" onclick="openConfirm('assign')">
+          🎲 Assign Subjects
+        </button>
+        <button type="button" class="btn-action btn-generate" onclick="openConfirm('generate')">
+          ⚡ Generate Timetable
+        </button>
+      </div>
+      <!-- Hidden forms -->
+      <form method="POST" action="{{ url_for('assign_subjects') }}"   id="formAssign"   style="display:none"></form>
+      <form method="POST" action="{{ url_for('generate_timetable') }}" id="formGenerate" style="display:none"></form>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} alert-dismissible">
+          {{ msg }}
+          <button onclick="this.parentElement.remove()">×</button>
+        </div>
+      {% endfor %}
+    {% endwith %}
+
+    <!-- ══════════════ FACULTY SECTION ══════════════ -->
+    <section id="faculty-section" class="content-section active-section">
+      <div class="section-header">
+        <h3>👨‍🏫 Faculty Management</h3>
+        <button class="btn-primary" onclick="openModal('addFacultyModal')">+ Add Faculty</button>
+      </div>
+
+      <div class="card table-card">
+        <table class="data-table" id="facultyTable">
+          <thead>
+            <tr>
+              <th>#</th><th>Name</th><th>Email</th><th>Role</th>
+              <th>Department</th><th>Max Workload</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in faculty_list %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><strong>{{ f.name }}</strong></td>
+              <td>{{ f.email }}</td>
+              <td><span class="badge badge-role">{{ f.role }}</span></td>
+              <td>{{ f.department }}</td>
+              <td><span class="badge badge-hours">{{ f.max_workload }} hrs/wk</span></td>
+              <td class="actions-cell">
+                <button class="btn-icon btn-edit" onclick='openEditFaculty({{ f.id }}, "{{ f.name }}", "{{ f.email }}", "{{ f.role }}", "{{ f.department }}")' title="Edit">✏️</button>
+                <form method="POST" action="{{ url_for('delete_faculty', fid=f.id) }}" style="display:inline" onsubmit="return confirm('Delete this faculty member?')">
+                  <button type="submit" class="btn-icon btn-delete" title="Delete">🗑️</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="empty-row">No faculty records found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ══════════════ SUBJECTS SECTION ══════════════ -->
+    <section id="subjects-section" class="content-section">
+      <div class="section-header">
+        <h3>📚 Subject Management</h3>
+        <button class="btn-primary" onclick="openModal('addSubjectModal')">+ Add Subject</button>
+      </div>
+
+      <div class="card table-card">
+        <table class="data-table">
+          <thead>
+            <tr><th>#</th><th>Subject Name</th><th>Sem</th><th>Credits</th><th>Dept</th><th>Hrs/Wk</th><th>Type</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for s in subjects %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><strong>{{ s.name }}</strong></td>
+              <td><span class="badge badge-role">Sem {{ s.semester }}</span></td>
+              <td>{{ s.credits }}</td>
+              <td>{{ s.department }}</td>
+              <td>{{ s.hours_per_week }}</td>
+              <td>
+                {% if s.is_lab %}
+                  <span class="badge badge-lab">🔬 Lab</span>
+                {% else %}
+                  <span class="badge badge-theory">📖 Theory</span>
+                {% endif %}
+              </td>
+              <td>
+                <form method="POST" action="{{ url_for('delete_subject', sid=s.id) }}" style="display:inline" onsubmit="return confirm('Delete this subject?')">
+                  <button type="submit" class="btn-icon btn-delete" title="Delete">🗑️</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="empty-row">No subjects found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ══════════════ PREFERENCES SECTION ══════════════ -->
+    <section id="prefs-section" class="content-section">
+      <div class="section-header">
+        <h3>❤️ Faculty Preferences</h3>
+      </div>
+      <div class="card table-card">
+        <table class="data-table">
+          <thead>
+            <tr><th>#</th><th>Faculty Name</th><th>Sem</th><th>Preferred Subject</th></tr>
+          </thead>
+          <tbody>
+            {% for p in prefs %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ p.faculty_name }}</td>
+              <td>Sem {{ p.semester }}</td>
+              <td>{{ p.subject_name }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="empty-row">No preferences submitted yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ══════════════ ALLOCATIONS SECTION ══════════════ -->
+    <section id="alloc-section" class="content-section">
+      <div class="section-header">
+        <h3>🔗 Subject Allocations</h3>
+        <button type="button" class="btn-primary btn-assign" onclick="openConfirm('assign')">🎲 Re-Assign</button>
+      </div>
+      <div class="card table-card">
+        <table class="data-table">
+          <thead>
+            <tr><th>#</th><th>Faculty</th><th>Role</th><th>Sem</th><th>Assigned Subject</th><th>Type</th><th>Batch</th><th>Hrs/Wk</th><th>Max WL</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for a in allocations %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><strong>{{ a.faculty_name }}</strong></td>
+              <td><span class="badge badge-role">{{ a.role }}</span></td>
+              <td>Sem {{ a.semester }}</td>
+              <td>{{ a.subject_name }}</td>
+              <td>
+                {% if a.is_lab %}
+                  <span class="badge badge-lab">🔬 Lab</span>
+                {% else %}
+                  <span class="badge badge-theory">📖 Theory</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if a.batch_no %}
+                  <span class="badge badge-hours">Batch {{ a.batch_no }}</span>
+                {% else %}
+                  <span style="color:var(--text-muted)">—</span>
+                {% endif %}
+              </td>
+              <td>{{ a.hours_per_week }}</td>
+              <td>{{ a.max_workload }}</td>
+              <td>
+                {% if a.hours_per_week <= a.max_workload %}
+                  <span class="badge badge-ok">✓ OK</span>
+                {% else %}
+                  <span class="badge badge-warn">⚠ Overload</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="9" class="empty-row">No allocations yet. Click "Assign Subjects".</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ══════════ ADD FACULTY MODAL ══════════ -->
+  <div class="modal-overlay" id="addFacultyModal" onclick="closeModal('addFacultyModal')">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h4>Add New Faculty</h4>
+        <button class="modal-close" onclick="closeModal('addFacultyModal')">×</button>
+      </div>
+      <form method="POST" action="{{ url_for('add_faculty') }}" class="modal-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input type="text" name="name" placeholder="e.g. Dr. John Doe" required/>
+          </div>
+          <div class="form-group">
+            <label>Email *</label>
+            <input type="email" name="email" placeholder="e.g. john@college.edu" required/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Password *</label>
+            <input type="password" name="password" placeholder="Set login password" required/>
+          </div>
+          <div class="form-group">
+            <label>Department *</label>
+            <input type="text" name="department" placeholder="e.g. Computer Science" required/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Role *</label>
+          <select name="role" required>
+            <option value="">Select Role</option>
+            {% for role, hrs in workload_limits.items() %}
+            <option value="{{ role }}">{{ role }} ({{ hrs }} hrs/wk)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('addFacultyModal')">Cancel</button>
+          <button type="submit" class="btn-primary">Add Faculty</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ══════════ EDIT FACULTY MODAL ══════════ -->
+  <div class="modal-overlay" id="editFacultyModal" onclick="closeModal('editFacultyModal')">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h4>Edit Faculty</h4>
+        <button class="modal-close" onclick="closeModal('editFacultyModal')">×</button>
+      </div>
+      <form method="POST" id="editFacultyForm" class="modal-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input type="text" name="name" id="editName" required/>
+          </div>
+          <div class="form-group">
+            <label>Email *</label>
+            <input type="email" name="email" id="editEmail" required/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>New Password <small>(leave blank to keep)</small></label>
+            <input type="password" name="password" placeholder="New password (optional)"/>
+          </div>
+          <div class="form-group">
+            <label>Department *</label>
+            <input type="text" name="department" id="editDept" required/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Role *</label>
+          <select name="role" id="editRole" required>
+            {% for role, hrs in workload_limits.items() %}
+            <option value="{{ role }}">{{ role }} ({{ hrs }} hrs/wk)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('editFacultyModal')">Cancel</button>
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ══════════ ADD SUBJECT MODAL ══════════ -->
+  <div class="modal-overlay" id="addSubjectModal" onclick="closeModal('addSubjectModal')">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h4>Add New Subject</h4>
+        <button class="modal-close" onclick="closeModal('addSubjectModal')">×</button>
+      </div>
+      <form method="POST" action="{{ url_for('add_subject') }}" class="modal-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Subject Name *</label>
+            <input type="text" name="name" placeholder="e.g. Data Structures" required/>
+          </div>
+          <div class="form-group">
+            <label>Department *</label>
+            <input type="text" name="department" placeholder="e.g. Computer Science" required/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Semester *</label>
+            <select name="semester" required>
+              {% for s in semesters %}
+              <option value="{{ s }}">Semester {{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Credits *</label>
+            <input type="number" name="credits" min="1" max="5" value="3" required/>
+            <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">(Weekly hours = Credits + 1)</p>
+          </div>
+        </div>
+        <div class="form-group" style="padding-top:10px">
+          <label class="checkbox-label">
+            <input type="checkbox" name="is_lab" id="isLab"/>
+            <span>🔬 Lab Session (2 consecutive periods)</span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('addSubjectModal')">Cancel</button>
+          <button type="submit" class="btn-primary">Add Subject</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ══════════ CONFIRM MODAL ══════════ -->
+  <div class="modal-overlay" id="confirmModal" onclick="closeModal('confirmModal')">
+    <div class="modal" style="max-width:400px" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h4 id="confirmTitle">Confirm Action</h4>
+        <button class="modal-close" onclick="closeModal('confirmModal')">×</button>
+      </div>
+      <div style="padding:1.25rem 1.5rem">
+        <p id="confirmMsg" style="color:var(--text-secondary);font-size:0.9rem;"></p>
+      </div>
+      <div class="modal-actions" style="padding:0 1.5rem 1.5rem">
+        <button class="btn-secondary" id="confirmCancel" onclick="closeModal('confirmModal')">Cancel</button>
+        <button class="btn-primary" id="confirmOk">Yes, Proceed</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CONFIRM_CONFIG = {
+      assign:   { title:'Assign Subjects',    msg:'Randomly assign one subject per faculty from their preferences?', form:'formAssign' },
+      generate: { title:'Generate Timetable', msg:'Generate the full timetable? Existing slots will be overwritten.',   form:'formGenerate' }
+    };
+
+    function openConfirm(action) {
+      const cfg = CONFIRM_CONFIG[action];
+      document.getElementById('confirmTitle').textContent = cfg.title;
+      document.getElementById('confirmMsg').textContent   = cfg.msg;
+      document.getElementById('confirmOk').onclick = function() {
+        closeModal('confirmModal');
+        document.getElementById(cfg.form).submit();
+      };
+      openModal('confirmModal');
+    }
+
+    function showSection(id, el) {
+      document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active-section'));
+      document.getElementById(id).classList.add('active-section');
+      document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const titles = {
+        'faculty-section': 'Faculty Management',
+        'subjects-section': 'Subject Management',
+        'prefs-section': 'Faculty Preferences',
+        'alloc-section': 'Subject Allocations'
+      };
+      document.getElementById('pageTitle').textContent = titles[id] || '';
+      return false;
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    function openEditFaculty(fid, name, email, role, dept) {
+      document.getElementById('editFacultyForm').action = `/admin/faculty/edit/${fid}`;
+      document.getElementById('editName').value  = name;
+      document.getElementById('editEmail').value = email;
+      document.getElementById('editRole').value  = role;
+      document.getElementById('editDept').value  = dept;
+      openModal('editFacultyModal');
+    }
+
+    // Handle anchor links in sidebar
+    document.querySelectorAll('.nav-link[href^="#"]').forEach(link => {
+      link.addEventListener('click', function(e) {
+        e.preventDefault();
+        const sectionId = this.getAttribute('href').replace('#','');
+        showSection(sectionId, this);
+      });
+    });
+  </script>
+</body>
+</html>

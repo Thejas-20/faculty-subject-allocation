@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Timetable – Faculty Management System</title>
+  <meta name="description" content="Weekly timetable with lab batches, fixed slots and faculty assignments."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <style>
+    .sem-filter { display:flex; gap:10px; padding: 0 1.5rem 1rem; }
+    .sem-btn { 
+      padding: 8px 16px; border-radius: 8px; background: rgba(255,255,255,0.05); 
+      color: var(--text-secondary); text-decoration: none; border: 1px solid var(--border);
+      font-size: 0.85rem; transition: 0.2s;
+    }
+    .sem-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .sem-btn:hover:not(.active) { background: rgba(255,255,255,0.1); }
+  </style>
+</head>
+<body class="dashboard-page">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">🎓</span>
+      <span class="brand-text">FacultyMS</span>
+    </div>
+    <nav class="sidebar-nav">
+      {% if is_admin %}
+      <a href="{{ url_for('admin_dashboard') }}" class="nav-link">
+        <span class="nav-icon">⬅️</span> Back to Admin
+      </a>
+      {% else %}
+      <a href="{{ url_for('faculty_dashboard') }}" class="nav-link">
+        <span class="nav-icon">⬅️</span> Back to Dashboard
+      </a>
+      {% endif %}
+      <a href="#" class="nav-link active">
+        <span class="nav-icon">📅</span> Timetable
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="{{ url_for('logout') }}" class="logout-btn">⏻ Logout</a>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <header class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">☰</button>
+      <h2 class="page-title">📅 Weekly Timetable</h2>
+      {% if is_admin %}
+      <div class="topbar-actions">
+        <form method="POST" action="{{ url_for('generate_timetable') }}" id="ttRegenForm">
+          <button type="submit" class="btn-action btn-generate" id="btnRegen">
+            ⚡ Re-Generate All
+          </button>
+        </form>
+        <button class="btn-action" onclick="window.print()" style="background:rgba(255,255,255,0.07);color:var(--text-secondary);">🖨 Print</button>
+      </div>
+      {% endif %}
+    </header>
+
+    {% if is_admin %}
+    <div class="sem-filter">
+      {% for s in semesters %}
+      <a href="{{ url_for('view_timetable', semester=s) }}" class="sem-btn {% if s == current_sem %}active{% endif %}">Semester {{ s }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Legend -->
+    <div class="tt-legend">
+      <span class="legend-item"><span class="dot dot-fixed"></span> Fixed Slot</span>
+      <span class="legend-item"><span class="dot dot-theory"></span> Theory</span>
+      <span class="legend-item"><span class="dot dot-lab"></span> Lab (Batches)</span>
+      <span class="legend-item"><span class="dot dot-break"></span> Break / Lunch</span>
+      <span class="legend-item"><span class="dot dot-free"></span> Free</span>
+    </div>
+
+    <!-- Period key -->
+    <div class="period-key">
+      <strong>Schedule: </strong>
+      {% set tp_num = namespace(n=0) %}
+      {% for p in periods %}
+        {% if p.type == 'theory' %}
+          {% set tp_num.n = tp_num.n + 1 %}
+          <span class="pk-item"><strong>P{{ tp_num.n }}</strong> {{ p.label }}</span>
+        {% elif p.type == 'break' %}
+          <span class="pk-item pk-break">☕ {{ p.label }}</span>
+        {% elif p.type == 'lunch' %}
+          <span class="pk-item pk-lunch">🍽️ {{ p.label }}</span>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="card timetable-wrap">
+      <div class="timetable-scroll">
+        <table class="timetable" id="mainTimetable">
+          <thead>
+            <tr>
+              <th class="time-col">Time Slot</th>
+              {% for day in days %}
+              <th class="day-col">{{ day }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% set period_counter = namespace(n=0) %}
+            {% for period in periods %}
+
+            {# ── BREAK ROW ── #}
+            {% if period.type == 'break' %}
+            <tr class="break-row">
+              <td class="period-time break-time">
+                <span class="break-label">☕ {{ period.name }}</span>
+                <span class="break-duration">{{ period.label }}</span>
+              </td>
+              {% for day in days %}
+                {% if day == 'Saturday' and period.id > sat_max %}
+                <td class="cell-off">OFF</td>
+                {% else %}
+                <td class="break-cell">Short Break</td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+
+            {# ── LUNCH ROW ── #}
+            {% elif period.type == 'lunch' %}
+            <tr class="lunch-row">
+              <td class="period-time lunch-time">
+                <span class="break-label">🍽️ {{ period.name }}</span>
+                <span class="break-duration">{{ period.label }}</span>
+              </td>
+              {% for day in days %}
+                {% if day == 'Saturday' and period.id > sat_max %}
+                <td class="cell-off">OFF</td>
+                {% else %}
+                <td class="lunch-cell">Lunch Break</td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+
+            {# ── TEACHING PERIOD ROW ── #}
+            {% else %}
+            {% set period_counter.n = period_counter.n + 1 %}
+            <tr class="period-row">
+              <td class="period-time">
+                <span class="period-num">P{{ period_counter.n }}</span>
+                <span class="period-clock">{{ period.label }}</span>
+              </td>
+
+              {% for day in days %}
+              {% if day == 'Saturday' and period.id > sat_max %}
+                <td class="cell-off">OFF</td>
+              {% else %}
+                {% set cell_entries = grid[day][period.id] %}
+                {% set fixed_subj   = fixed_map.get((day, period.id)) %}
+
+                {% if fixed_subj %}
+                  <td class="tt-cell cell-fixed">
+                    <div class="cell-content">
+                      <span class="cell-subject">📌 {{ fixed_subj }}</span>
+                      <span class="cell-tag tag-fixed">Fixed</span>
+                    </div>
+                  </td>
+                {% elif cell_entries %}
+                  {% set first = cell_entries[0] %}
+                  {% if first.is_lab %}
+                    <td class="tt-cell cell-lab">
+                      <div class="cell-content">
+                        <span class="cell-subject">🔬 {{ first.subject_name }}</span>
+                        {% if not is_admin %}
+                          <span class="cell-tag tag-fixed">Sem {{ first.semester }}</span>
+                        {% endif %}
+                        {% if is_admin %}
+                          {% set batches = lab_bmap.get(first.subject_id if first.subject_id else 0, []) %}
+                          {% if batches %}
+                          <div class="batch-list">
+                            {% for b in batches %}
+                            <div class="batch-row">
+                              <span class="batch-tag">Batch {{ b.batch_no }}</span>
+                              <span class="batch-fac">{{ b.faculty_name }}</span>
+                            </div>
+                            {% endfor %}
+                          </div>
+                          {% endif %}
+                        {% else %}
+                          <span class="cell-tag tag-lab">Lab</span>
+                          {% for e in cell_entries %}<span class="cell-faculty">Batch {{ e.batch_no }}</span>{% endfor %}
+                        {% endif %}
+                        <span class="cell-tag tag-lab">2 Periods</span>
+                      </div>
+                    </td>
+                  {% else %}
+                    <td class="tt-cell cell-theory">
+                      <div class="cell-content">
+                        <span class="cell-subject">{{ first.subject_name }}</span>
+                        {% if not is_admin %}
+                        <span class="cell-tag tag-fixed">Sem {{ first.semester }}</span>
+                        {% endif %}
+                        {% if is_admin and first.faculty_name %}
+                        <span class="cell-faculty">{{ first.faculty_name }}</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                  {% endif %}
+                {% else %}
+                  <td class="tt-cell cell-free"><div class="cell-content cell-empty"><span>—</span></div></td>
+                {% endif %}
+              {% endif %}
+              {% endfor %}
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if is_admin %}
+    <div class="tt-stats">
+      <div class="stat-card card">
+        <span class="stat-icon">📌</span>
+        <div><p class="stat-label">Fixed Slots</p><p class="stat-num">{{ fixed_map|length }}</p></div>
+      </div>
+      <div class="stat-card card">
+        <span class="stat-icon">📅</span>
+        <div><p class="stat-label">Working Days</p><p class="stat-num">{{ days|length }}</p></div>
+      </div>
+      <div class="stat-card card">
+        <span class="stat-icon">⏰</span>
+        <div><p class="stat-label">Periods / Day</p><p class="stat-num">{% if days|length > 0 and days[-1] == 'Saturday' %}Var{% else %}6{% endif %}</p></div>
+      </div>
+      <div class="stat-card card">
+        <span class="stat-icon">🔬</span>
+        <div><p class="stat-label">Lab Batches</p><p class="stat-num">{{ lab_bmap|length * 4 if lab_bmap else 0 }}</p></div>
+      </div>
+    </div>
+    {% endif %}
+  </main>
+
+  <script>
+    document.querySelectorAll('.timetable td, .timetable th').forEach(cell => {
+      const col = cell.cellIndex;
+      cell.addEventListener('mouseenter', () => {
+        document.querySelectorAll(`.timetable tr td:nth-child(${col+1}), .timetable tr th:nth-child(${col+1})`).forEach(c => c.classList.add('col-highlight'));
+      });
+      cell.addEventListener('mouseleave', () => {
+        document.querySelectorAll('.col-highlight').forEach(c => c.classList.remove('col-highlight'));
+      });
+    });
+  </script>
+</body>
+</html>

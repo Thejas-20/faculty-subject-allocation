@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Faculty Dashboard – Timetable System</title>
+  <meta name="description" content="Faculty portal to select subject preferences and view assigned timetable."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body class="dashboard-page">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">🎓</span>
+      <span class="brand-text">FacultyMS</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#profile-section" class="nav-link active" onclick="showSection('profile-section',this)">
+        <span class="nav-icon">👤</span> My Profile
+      </a>
+      <a href="#pref-section" class="nav-link" onclick="showSection('pref-section',this)">
+        <span class="nav-icon">❤️</span> My Preferences
+      </a>
+      <a href="#alloc-section" class="nav-link" onclick="showSection('alloc-section',this)">
+        <span class="nav-icon">🔗</span> My Allocation
+      </a>
+      <a href="{{ url_for('faculty_timetable') }}" class="nav-link">
+        <span class="nav-icon">📅</span> My Timetable
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-badge">
+        <span class="user-avatar">{{ faculty.name[0] }}</span>
+        <div>
+          <p class="user-name">{{ faculty.name }}</p>
+          <p class="user-role">{{ faculty.role }}</p>
+        </div>
+      </div>
+      <a href="{{ url_for('logout') }}" class="logout-btn">⏻ Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+    <header class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">☰</button>
+      <h2 class="page-title" id="pageTitle">My Profile</h2>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} alert-dismissible">
+          {{ msg }}
+          <button onclick="this.parentElement.remove()">×</button>
+        </div>
+      {% endfor %}
+    {% endwith %}
+
+    <!-- ══════════════ PROFILE SECTION ══════════════ -->
+    <section id="profile-section" class="content-section active-section">
+      <div class="section-header">
+        <h3>👤 My Profile</h3>
+      </div>
+      <div class="profile-grid">
+        <div class="profile-card card">
+          <div class="profile-avatar-lg">{{ faculty.name[0] }}</div>
+          <h3 class="profile-name">{{ faculty.name }}</h3>
+          <p class="profile-designation">{{ faculty.role }}</p>
+          <div class="profile-dept-badge">{{ faculty.department }}</div>
+        </div>
+        <div class="profile-details card">
+          <h4>📋 Details</h4>
+          <div class="detail-row">
+            <span class="detail-label">Email</span>
+            <span class="detail-value">{{ faculty.email }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Role</span>
+            <span class="detail-value">
+              <span class="badge badge-role">{{ faculty.role }}</span>
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Department</span>
+            <span class="detail-value">{{ faculty.department }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Max Workload</span>
+            <span class="detail-value">
+              <span class="badge badge-hours">{{ faculty.max_workload }} hrs/week</span>
+            </span>
+          </div>
+
+          {% set wl = workload_limits %}
+          <div class="workload-info">
+            <h5>📊 Workload Policy</h5>
+            <div class="wl-grid">
+              {% for role, hrs in wl.items() %}
+              <div class="wl-item {% if role == faculty.role %}wl-active{% endif %}">
+                <span class="wl-role">{{ role }}</span>
+                <span class="wl-hrs">{{ hrs }} hrs/wk</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ PREFERENCES SECTION ══════════════ -->
+    <section id="pref-section" class="content-section">
+      <div class="section-header">
+        <h3>❤️ Subject Preferences</h3>
+      </div>
+
+      <div class="card pref-card">
+        <p class="pref-info">
+          Select <strong>exactly 2 subjects</strong> you prefer to teach. The system will randomly assign one of them.
+        </p>
+
+        {% if pref_ids %}
+        <div class="current-prefs">
+          <h5>✅ Currently Selected:</h5>
+          <div class="pref-tags">
+            {% for s in subjects %}
+              {% if s.id in pref_ids %}
+                <span class="pref-tag">{{ s.name }}</span>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('submit_preferences') }}" id="prefForm">
+          <div class="subject-grid">
+            {% for s in subjects %}
+            <label class="subject-card {% if s.id in pref_ids %}selected-subj{% endif %}" id="label-{{ s.id }}">
+              <input type="checkbox" name="subjects" value="{{ s.id }}"
+                     {% if s.id in pref_ids %}checked{% endif %}
+                     onchange="handlePrefCheck(this)"/>
+              <div class="subj-card-inner">
+                <span class="subj-icon">{% if s.is_lab %}🔬{% else %}📖{% endif %}</span>
+                <span class="subj-name">{{ s.name }}</span>
+                <span class="subj-meta">{{ s.hours_per_week }} hrs/wk
+                  {% if s.is_lab %}<span class="badge badge-lab">Lab</span>{% endif %}
+                </span>
+              </div>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="pref-actions">
+            <span class="pref-counter" id="prefCounter">
+              {{ pref_ids|length }} / 2 selected
+            </span>
+            <button type="submit" class="btn-primary" id="prefSubmitBtn"
+                    {% if pref_ids|length != 2 %}disabled{% endif %}>
+              💾 Save Preferences
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ══════════════ ALLOCATION SECTION ══════════════ -->
+    <section id="alloc-section" class="content-section">
+      <div class="section-header">
+        <h3>🔗 My Subject Allocations</h3>
+      </div>
+      {% if allocations %}
+      <div class="allocation-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:1.5rem;">
+        {% for a in allocations %}
+        <div class="alloc-result card" style="text-align:left; padding: 2rem;">
+          <div style="display:flex; justify-content: space-between; align-items: start;">
+            <div class="alloc-icon" style="margin:0">✅</div>
+            <span class="badge badge-role">Semester {{ a.semester }}</span>
+          </div>
+          <h4 style="margin-top:1rem">Subject Assigned!</h4>
+          <div class="alloc-subject-name" style="margin: 0.5rem 0 1.5rem">{{ a.subject_name }}</div>
+          <div class="alloc-details">
+            <div class="alloc-detail">
+              <span>Hours / Week</span>
+              <strong>{{ a.hours_per_week }}</strong>
+            </div>
+            <div class="alloc-detail">
+              <span>Type</span>
+              <strong>{% if a.is_lab %}🔬 Lab{% else %}📖 Theory{% endif %}</strong>
+            </div>
+            {% if a.batch_no %}
+            <div class="alloc-detail">
+              <span>Batch</span>
+              <strong>Batch {{ a.batch_no }}</strong>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="margin-top:2rem; text-align:center">
+        <a href="{{ url_for('faculty_timetable') }}" class="btn-primary" style="text-decoration:none;display:inline-block">
+          📅 View My Full Timetable →
+        </a>
+      </div>
+      {% else %}
+      <div class="alloc-empty card">
+        <div class="alloc-icon">⏳</div>
+        <h4>Not Yet Assigned</h4>
+        <p>The Admin hasn't run subject allocation yet. Please wait.</p>
+      </div>
+      {% endif %}
+    </section>
+  </main>
+
+  <script>
+    function showSection(id, el) {
+      document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active-section'));
+      document.getElementById(id).classList.add('active-section');
+      document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const titles = {
+        'profile-section': 'My Profile',
+        'pref-section':    'Subject Preferences',
+        'alloc-section':   'My Allocation'
+      };
+      document.getElementById('pageTitle').textContent = titles[id] || '';
+      return false;
+    }
+
+    document.querySelectorAll('.nav-link[href^="#"]').forEach(link => {
+      link.addEventListener('click', function(e) {
+        e.preventDefault();
+        const sectionId = this.getAttribute('href').replace('#','');
+        showSection(sectionId, this);
+      });
+    });
+
+    function handlePrefCheck(checkbox) {
+      const checked = document.querySelectorAll('input[name="subjects"]:checked');
+      const label   = checkbox.closest('label');
+
+      if (checked.length > 2 && checkbox.checked) {
+        checkbox.checked = false;
+        label.classList.remove('selected-subj');
+        showToast('You can only select 2 subjects!', 'error');
+        updateCounter();
+        return;
+      }
+
+      label.classList.toggle('selected-subj', checkbox.checked);
+      updateCounter();
+    }
+
+    function updateCounter() {
+      const checked = document.querySelectorAll('input[name="subjects"]:checked').length;
+      document.getElementById('prefCounter').textContent = checked + ' / 2 selected';
+      document.getElementById('prefSubmitBtn').disabled = (checked !== 2);
+    }
+
+    function showToast(msg, type) {
+      const t = document.createElement('div');
+      t.className = 'alert alert-' + type;
+      t.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:9999;animation:slideIn .3s ease';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+  </script>
+</body>
+</html>
