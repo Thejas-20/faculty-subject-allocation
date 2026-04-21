@@ -24,11 +24,17 @@
       <a href="#subjects-section" class="nav-link" onclick="showSection('subjects-section',this)">
         <span class="nav-icon">📚</span> Subjects
       </a>
+      <a href="#semester-section" class="nav-link" onclick="showSection('semester-section',this)">
+        <span class="nav-icon">🗂️</span> Semesters
+      </a>
       <a href="#prefs-section" class="nav-link" onclick="showSection('prefs-section',this)">
         <span class="nav-icon">❤️</span> Preferences
       </a>
       <a href="#alloc-section" class="nav-link" onclick="showSection('alloc-section',this)">
         <span class="nav-icon">🔗</span> Allocations
+      </a>
+      <a href="#summary-section" class="nav-link" onclick="showSection('summary-section',this)">
+        <span class="nav-icon">📊</span> Alloc Summary
       </a>
       <a href="{{ url_for('view_timetable') }}" class="nav-link">
         <span class="nav-icon">📅</span> Timetable
@@ -84,7 +90,7 @@
         <table class="data-table" id="facultyTable">
           <thead>
             <tr>
-              <th>#</th><th>Name</th><th>Email</th><th>Role</th>
+              <th>#</th><th>Name</th><th>Username</th><th>Role</th>
               <th>Department</th><th>Max Workload</th><th>Actions</th>
             </tr>
           </thead>
@@ -148,6 +154,42 @@
             </tr>
             {% else %}
             <tr><td colspan="6" class="empty-row">No subjects found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ══════════════ SEMESTER MANAGEMENT SECTION ══════════════ -->
+    <section id="semester-section" class="content-section">
+      <div class="section-header">
+        <h3>🗂️ Semester Management</h3>
+      </div>
+      <div class="card" style="padding:1.5rem; margin-bottom:1.5rem;">
+        <h4 style="margin-bottom:1rem; color:var(--text-primary)">Add New Semester</h4>
+        <form method="POST" action="{{ url_for('add_semester') }}" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+          <input type="number" name="number" min="1" max="12" placeholder="e.g. 8" required
+                 style="padding:0.6rem 1rem; border-radius:8px; border:1.5px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); font-size:0.9rem; width:140px;"/>
+          <button type="submit" class="btn-primary">+ Add Semester</button>
+        </form>
+      </div>
+      <div class="card table-card">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Semester</th><th>Action</th></tr></thead>
+          <tbody>
+            {% for s in semesters %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><span class="badge badge-role">Semester {{ s }}</span></td>
+              <td>
+                <form method="POST" action="/admin/semester/delete/{{ s }}" style="display:inline"
+                      onsubmit="return confirm('Remove Semester {{ s }}? Subjects assigned to it will need reassignment.')">
+                  <button type="submit" class="btn-icon btn-delete" title="Remove">🗑️</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="empty-row">No semesters configured.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -230,6 +272,56 @@
         </table>
       </div>
     </section>
+
+    <!-- ══════════════ ALLOCATION SUMMARY SECTION ══════════════ -->
+    <section id="summary-section" class="content-section">
+      <div class="section-header">
+        <h3>📊 Faculty Allocation Summary</h3>
+        <div style="display:flex; gap:0.75rem;">
+          <button type="button" class="btn-action btn-assign" onclick="openConfirm('assign')">🎲 Re-Assign</button>
+          <a href="{{ url_for('view_timetable') }}" class="btn-action btn-generate" style="text-decoration:none">📅 View Timetable</a>
+        </div>
+      </div>
+      {% if alloc_summary %}
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); gap:1.5rem;">
+        {% for fid, info in alloc_summary.items() %}
+        <div class="card" style="padding:1.5rem;">
+          <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem;">
+            <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1rem;flex-shrink:0;">
+              {{ info.name[0] }}
+            </div>
+            <div>
+              <h4 style="margin:0;font-size:0.95rem;">{{ info.name }}</h4>
+              <span class="badge badge-role" style="font-size:0.7rem;">{{ info.role }}</span>
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:0.5rem;">
+            {% for subj in info.subjects %}
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0.75rem; background:var(--bg-secondary); border-radius:8px; font-size:0.82rem;">
+              <div>
+                <span>{% if subj.is_lab %}🔬{% else %}📖{% endif %} {{ subj.name }}</span>
+                <span class="badge badge-role" style="margin-left:0.4rem; font-size:0.65rem;">Sem {{ subj.semester }}</span>
+                {% if subj.batch_no %}<span class="badge badge-hours" style="font-size:0.65rem;">Batch {{ subj.batch_no }}</span>{% endif %}
+              </div>
+              <span style="color:var(--text-muted); font-size:0.75rem;">{{ subj.hours_per_week }}h/wk</span>
+            </div>
+            {% endfor %}
+          </div>
+          <div style="margin-top:1rem; text-align:right;">
+            <span style="font-size:0.78rem; color:var(--text-muted);">{{ info.subjects|length }} subject(s) assigned</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card" style="padding:3rem; text-align:center;">
+        <div style="font-size:3rem;">⏳</div>
+        <h4 style="margin-top:1rem;">No Allocations Yet</h4>
+        <p style="color:var(--text-muted);">Click <strong>Assign Subjects</strong> to allocate subjects to faculty.</p>
+        <button type="button" class="btn-primary" onclick="openConfirm('assign')" style="margin-top:1rem;">🎲 Assign Now</button>
+      </div>
+      {% endif %}
+    </section>
   </main>
 
   <!-- ══════════ ADD FACULTY MODAL ══════════ -->
@@ -246,8 +338,8 @@
             <input type="text" name="name" placeholder="e.g. Dr. John Doe" required/>
           </div>
           <div class="form-group">
-            <label>Email *</label>
-            <input type="email" name="email" placeholder="e.g. john@college.edu" required/>
+            <label>Username *</label>
+            <input type="text" name="email" placeholder="e.g. john" required/>
           </div>
         </div>
         <div class="form-row">
@@ -291,8 +383,8 @@
             <input type="text" name="name" id="editName" required/>
           </div>
           <div class="form-group">
-            <label>Email *</label>
-            <input type="email" name="email" id="editEmail" required/>
+            <label>Username *</label>
+            <input type="text" name="email" id="editEmail" required/>
           </div>
         </div>
         <div class="form-row">

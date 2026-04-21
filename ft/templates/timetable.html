@@ -117,13 +117,9 @@
                 <span class="break-label">☕ {{ period.name }}</span>
                 <span class="break-duration">{{ period.label }}</span>
               </td>
-              {% for day in days %}
-                {% if day == 'Saturday' and period.id > sat_max %}
-                <td class="cell-off">OFF</td>
-                {% else %}
-                <td class="break-cell">Short Break</td>
-                {% endif %}
-              {% endfor %}
+              <td colspan="{{ days|length }}" class="break-cell-merged">
+                <span>{{ period.name }}</span>
+              </td>
             </tr>
 
             {# ── LUNCH ROW ── #}
@@ -133,13 +129,16 @@
                 <span class="break-label">🍽️ {{ period.name }}</span>
                 <span class="break-duration">{{ period.label }}</span>
               </td>
-              {% for day in days %}
-                {% if day == 'Saturday' and period.id > sat_max %}
+              {% if days[-1] == 'Saturday' and period.id > sat_max %}
+                <td colspan="{{ days|length - 1 }}" class="lunch-cell-merged">
+                  <span>{{ period.name }}</span>
+                </td>
                 <td class="cell-off">OFF</td>
-                {% else %}
-                <td class="lunch-cell">Lunch Break</td>
-                {% endif %}
-              {% endfor %}
+              {% else %}
+                <td colspan="{{ days|length }}" class="lunch-cell-merged">
+                  <span>{{ period.name }}</span>
+                </td>
+              {% endif %}
             </tr>
 
             {# ── TEACHING PERIOD ROW ── #}
