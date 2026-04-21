@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import sqlite3
 import random
 import hashlib
-import os
 from functools import wraps
 
 app = Flask(__name__)
@@ -20,7 +19,13 @@ WORKLOAD_LIMITS = {
 }
 
 LAB_BATCHES = 4   # max lab batches per lab subject
-SEMESTERS = [2, 4, 6]
+
+def get_semesters():
+    """Fetch active semesters from DB, sorted."""
+    conn = get_db()
+    rows = conn.execute("SELECT number FROM semester ORDER BY number").fetchall()
+    conn.close()
+    return [r['number'] for r in rows] if rows else [2, 4, 6]
 
 # ─────────────────────────────────────────────
 # Timetable structure
@@ -64,6 +69,11 @@ def init_db():
     c = conn.cursor()
 
     c.executescript('''
+        CREATE TABLE IF NOT EXISTS semester (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            number INTEGER UNIQUE NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS faculty (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -130,14 +140,15 @@ def init_db():
         );
     ''')
 
+    # Seed semesters
+    for sem_num in [2, 4, 6]:
+        c.execute("INSERT OR IGNORE INTO semester(number) VALUES(?)", (sem_num,))
+
     # Seed admin
     admin_pw = hash_password('admin123')
     c.execute("INSERT OR IGNORE INTO admin(username,password) VALUES(?,?)", ('admin', admin_pw))
 
-    # Sample Fixed slots for each semester
-    # 2nd Sem: Maths Mon P1, Wed P1
-    # 4th Sem: Placement Thu P7+P8, Fri P7+P8
-    # 6th Sem: Maths Mon P2, Wed P2
+    # Fixed slots: Maths (Sem 2 & 6), Placement Training (Sem 4), Employability Enhancement Skills (Sem 4)
     fixed_seeds = [
         ('Monday', 1, 2, 'Maths'),
         ('Wednesday', 1, 2, 'Maths'),
@@ -147,9 +158,6 @@ def init_db():
         ('Friday', 8, 4, 'Placement Training'),
         ('Monday', 2, 6, 'Maths'),
         ('Wednesday', 2, 6, 'Maths'),
-    ]
-    # Fixed seeds based on images (e.g. Placement/Employability Skills)
-    fixed_seeds = [
         ('Friday', 1, 4, 'Employability Enhancement Skills'),
         ('Friday', 2, 4, 'Employability Enhancement Skills'),
     ]
@@ -158,14 +166,14 @@ def init_db():
 
     # Real faculty from images
     faculty_list = [
-        ('Prof. Shilpa S',      'shilpa@college.edu',  hash_password('pass123'), 'Assistant Professor', 'COMPUTER SCIENCE', 16),
-        ('Prof. Bindulakshmi K V', 'bindu@college.edu',   hash_password('pass123'), 'Professor',           'COMPUTER SCIENCE', 12),
-        ('Prof. Swathy Denesh', 'swathy@college.edu',  hash_password('pass123'), 'Assistant Professor', 'COMPUTER SCIENCE', 14),
-        ('Dr. R Girisha',       'girisha@college.edu', hash_password('pass123'), 'Professor',           'COMPUTER SCIENCE', 12),
-        ('Prof. Puttaswamy B S', 'putta@college.edu',   hash_password('pass123'), 'Professor',           'COMPUTER SCIENCE', 12),
-        ('Prof. Reethushree K C', 'reethu@college.edu',  hash_password('pass123'), 'Assistant Professor', 'COMPUTER SCIENCE', 14),
-        ('Dr. Geethanjali T M', 'geetha@college.edu',  hash_password('pass123'), 'HOD',               'COMPUTER SCIENCE', 8),
-        ('Prof. Kampana M',     'kampana@college.edu', hash_password('pass123'), 'Assistant Professor', 'COMPUTER SCIENCE', 16),
+        ('Prof. Shilpa S',      'shilpa',  hash_password('shilpa@123'), 'Assistant Professor', 'COMPUTER SCIENCE', 16),
+        ('Prof. Bindulakshmi K V', 'bindu',   hash_password('bindu@123'), 'Professor',           'COMPUTER SCIENCE', 12),
+        ('Prof. Swathy Denesh', 'swathy',  hash_password('swathy@123'), 'Assistant Professor', 'COMPUTER SCIENCE', 14),
+        ('Dr. R Girisha',       'girisha', hash_password('girisha@123'), 'Professor',           'COMPUTER SCIENCE', 12),
+        ('Prof. Puttaswamy B S', 'putta',   hash_password('putta@123'), 'Professor',           'COMPUTER SCIENCE', 12),
+        ('Prof. Reethushree K C', 'reethu',  hash_password('reethu@123'), 'Assistant Professor', 'COMPUTER SCIENCE', 14),
+        ('Dr. Geethanjali T M', 'geetha',  hash_password('geetha@123'), 'HOD',               'COMPUTER SCIENCE', 8),
+        ('Prof. Kampana M',     'kampana', hash_password('kampana@123'), 'Assistant Professor', 'COMPUTER SCIENCE', 16),
     ]
     for f in faculty_list:
         c.execute("INSERT OR IGNORE INTO faculty(name,email,password,role,department,max_workload) VALUES(?,?,?,?,?,?)", f)
@@ -201,7 +209,6 @@ def init_db():
         ('Financial Management (OE)',      'COMPUTER SCIENCE', 3, 4, 6, 0),
         ('Business Information Systems',   'COMPUTER SCIENCE', 3, 4, 6, 0),
         ('ML Laboratory',                 'COMPUTER SCIENCE', 1, 2, 6, 1),
-        ('Mini Project',                  'COMPUTER SCIENCE', 2, 4, 6, 1),
         ('Employability Enhancement Skills VI', 'COMPUTER SCIENCE', 1, 2, 6, 0),
         ('Universal Human Values',        'COMPUTER SCIENCE', 2, 2, 6, 0),
     ]
@@ -279,6 +286,7 @@ def logout():
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
+    semesters = get_semesters()
     conn = get_db()
     faculty_list = conn.execute("SELECT * FROM faculty ORDER BY name").fetchall()
     subjects     = conn.execute("SELECT * FROM subject ORDER BY semester, name").fetchall()
@@ -290,28 +298,48 @@ def admin_dashboard():
         ORDER BY f.name
     """).fetchall()
     allocations = conn.execute("""
-        SELECT a.id, f.name AS faculty_name, s.name AS subject_name, s.semester,
+        SELECT a.id, f.name AS faculty_name, f.id AS faculty_id, s.name AS subject_name, s.semester,
                f.role, f.max_workload, s.hours_per_week, s.is_lab, a.batch_no
         FROM allocation a
         JOIN faculty f ON a.faculty_id = f.id
         JOIN subject s ON a.subject_id = s.id
-        ORDER BY s.semester, s.name, a.batch_no, f.name
+        ORDER BY f.name, s.semester, s.name
     """).fetchall()
+
+    # Build faculty allocation summary: {faculty_id: {name, role, subjects:[]}}
+    alloc_summary = {}
+    for a in allocations:
+        fid = a['faculty_id']
+        if fid not in alloc_summary:
+            alloc_summary[fid] = {
+                'name': a['faculty_name'],
+                'role': a['role'],
+                'subjects': []
+            }
+        alloc_summary[fid]['subjects'].append({
+            'name': a['subject_name'],
+            'semester': a['semester'],
+            'is_lab': a['is_lab'],
+            'hours_per_week': a['hours_per_week'],
+            'batch_no': a['batch_no']
+        })
+
     conn.close()
     return render_template('admin_dashboard.html',
                            faculty_list=faculty_list,
                            subjects=subjects,
                            prefs=prefs,
                            allocations=allocations,
+                           alloc_summary=alloc_summary,
                            workload_limits=WORKLOAD_LIMITS,
                            lab_batches=LAB_BATCHES,
-                           semesters=SEMESTERS)
+                           semesters=semesters)
 
 @app.route('/admin/faculty/add', methods=['POST'])
 @admin_required
 def add_faculty():
     name       = request.form['name'].strip()
-    email      = request.form['email'].strip().lower()
+    email      = request.form['email'].strip() # Works as username
     password   = request.form['password'].strip()
     role       = request.form['role']
     department = request.form['department'].strip().upper()
@@ -334,7 +362,7 @@ def add_faculty():
 @admin_required
 def edit_faculty(fid):
     name       = request.form['name'].strip()
-    email      = request.form['email'].strip().lower()
+    email      = request.form['email'].strip() # Works as username
     role       = request.form['role']
     department = request.form['department'].strip().upper()
     max_wl     = WORKLOAD_LIMITS.get(role, 16)
@@ -397,55 +425,143 @@ def delete_subject(sid):
     flash('Subject deleted.', 'success')
     return redirect(url_for('admin_dashboard'))
 
+@app.route('/admin/semester/add', methods=['POST'])
+@admin_required
+def add_semester():
+    try:
+        number = int(request.form['number'])
+        if number < 1 or number > 12:
+            flash('Semester number must be between 1 and 12.', 'error')
+            return redirect(url_for('admin_dashboard'))
+        conn = get_db()
+        conn.execute("INSERT OR IGNORE INTO semester(number) VALUES(?)", (number,))
+        conn.commit()
+        conn.close()
+        flash(f'Semester {number} added successfully.', 'success')
+    except (ValueError, KeyError):
+        flash('Invalid semester number.', 'error')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/semester/delete/<int:number>', methods=['POST'])
+@admin_required
+def delete_semester(number):
+    conn = get_db()
+    conn.execute("DELETE FROM semester WHERE number=?", (number,))
+    conn.commit()
+    conn.close()
+    flash(f'Semester {number} removed.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
 @app.route('/admin/assign', methods=['POST'])
 @admin_required
 def assign_subjects():
     conn = get_db()
     conn.execute("DELETE FROM allocation")
 
-    subjects = conn.execute("SELECT * FROM subject").fetchall()
+    # Fetch data
+    subjects_all = conn.execute("SELECT * FROM subject").fetchall()
     faculty_rows = conn.execute("SELECT * FROM faculty").fetchall()
     
     faculty_workload = {f['id']: 0 for f in faculty_rows}
+    faculty_theory_count = {f['id']: 0 for f in faculty_rows}
+    
     prefs_rows = conn.execute("SELECT faculty_id, subject_id FROM faculty_preference").fetchall()
     faculty_prefs = {}
     for p in prefs_rows:
         faculty_prefs.setdefault(p['faculty_id'], []).append(p['subject_id'])
     
-    subjects = list(subjects)
-    random.shuffle(subjects)
+    # Split subjects
+    theory_subs = [s for s in subjects_all if not s['is_lab']]
+    lab_subs    = [s for s in subjects_all if s['is_lab']]
+    
+    random.shuffle(theory_subs)
+    random.shuffle(lab_subs)
 
-    for s in subjects:
-        num_sessions = LAB_BATCHES if s['is_lab'] else 1
-        sessions_assigned = 0
+    # 1. Primary Theory Assignment (Try to give everyone at least 1 theory class)
+    for s in theory_subs[:]:
+        hw = s['hours_per_week']
+        # Filter candidates: Priority to those with NO theory sessions yet
+        candidates = sorted(faculty_rows, key=lambda f: faculty_theory_count[f['id']])
         
-        # Filter candidates: If Semester 2, only Prof. Shilpa S can take it
-        if s['semester'] == 2:
-            candidates = [f for f in faculty_rows if f['name'] == 'Prof. Shilpa S']
-        else:
-            # Priority 1: Faculty who prefer this
-            p_facs = [f for f in faculty_rows if s['id'] in faculty_prefs.get(f['id'], [])]
-            random.shuffle(p_facs)
-            
-            # Priority 2: All other faculty
-            all_facs = list(faculty_rows)
-            random.shuffle(all_facs)
-            candidates = p_facs + [f for f in all_facs if f not in p_facs]
+        # Priority to preference
+        pref_candidates = [f for f in candidates if s['id'] in faculty_prefs.get(f['id'], [])]
+        other_candidates = [f for f in candidates if f not in pref_candidates]
+        
+        assigned = False
+        for f in pref_candidates + other_candidates:
+            if faculty_workload[f['id']] + hw <= f['max_workload']:
+                # For Semester 2 Python, restrict to Shilpa if possible (per context)
+                if s['semester'] == 2 and f['name'] != 'Prof. Shilpa S':
+                    continue
+                
+                conn.execute("INSERT INTO allocation(faculty_id, subject_id, batch_no) VALUES(?,?,?)",
+                            (f['id'], s['id'], None))
+                faculty_workload[f['id']] += hw
+                faculty_theory_count[f['id']] += 1
+                theory_subs.remove(s)
+                assigned = True
+                break
+        if assigned: continue
+
+    # 2. Lab Distribution (Split batches between multiple faculty)
+    # Target: 1 or 2 batches per faculty per lab subject MAX
+    MAX_BATCHES_PER_FACULTY = 2 
+
+    for s in lab_subs:
+        num_sessions = LAB_BATCHES # e.g. 4
+        sessions_assigned = 0
+        hw = s['hours_per_week']
+        
+        # Priority: Faculty who have a theory class (balanced mix) but not overworking
+        candidates = list(faculty_rows)
+        random.shuffle(candidates)
+        # Sort so those with fewer classes/workload come first
+        candidates.sort(key=lambda f: faculty_workload[f['id']])
 
         for f in candidates:
             if sessions_assigned >= num_sessions: break
             
-            hw = s['hours_per_week']
+            # Check capacity
+            # How many batches can this faculty take?
+            existing_batches_this_fac = 0
+            # We assign as many as we can up to MAX_BATCHES_PER_FACULTY
+            while sessions_assigned < num_sessions and existing_batches_this_fac < MAX_BATCHES_PER_FACULTY:
+                if faculty_workload[f['id']] + hw <= f['max_workload']:
+                    # Special Case: Sem 2 Python Lab to Shilpa
+                    if s['semester'] == 2 and f['name'] != 'Prof. Shilpa S' and sessions_assigned < 1:
+                        # Maybe let others take other batches, but typically 1 faculty handles a lab
+                        # But user said "don't assign all to one", so let's allow split
+                        pass
+
+                    batch_no = sessions_assigned + 1
+                    conn.execute("INSERT INTO allocation(faculty_id, subject_id, batch_no) VALUES(?,?,?)",
+                                (f['id'], s['id'], batch_no))
+                    faculty_workload[f['id']] += hw
+                    sessions_assigned += 1
+                    existing_batches_this_fac += 1
+                else:
+                    break
+
+    # 3. Remaining Theory Distribution
+    for s in theory_subs:
+        hw = s['hours_per_week']
+        candidates = list(faculty_rows)
+        random.shuffle(candidates)
+        candidates.sort(key=lambda f: (faculty_workload[f['id']], faculty_theory_count[f['id']]))
+        
+        for f in candidates:
             if faculty_workload[f['id']] + hw <= f['max_workload']:
-                batch_no = (sessions_assigned + 1) if s['is_lab'] else None
+                if s['semester'] == 2 and f['name'] != 'Prof. Shilpa S':
+                    continue
                 conn.execute("INSERT INTO allocation(faculty_id, subject_id, batch_no) VALUES(?,?,?)",
-                            (f['id'], s['id'], batch_no))
+                            (f['id'], s['id'], None))
                 faculty_workload[f['id']] += hw
-                sessions_assigned += 1
+                faculty_theory_count[f['id']] += 1
+                break
 
     conn.commit()
     conn.close()
-    flash('Subject assignment complete.', 'success')
+    flash('Balanced subject assignment complete.', 'success')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/timetable/generate', methods=['POST'])
@@ -466,12 +582,7 @@ def generate_timetable():
         FROM allocation a JOIN subject s ON a.subject_id = s.id
     """).fetchall()
 
-    # Tracking
-    # (day, period_id, semester) -> occupied
-    sem_occupied = {}
-    # (day, period_id, faculty_id) -> occupied
-    fac_occupied = {}
-
+    # Tracking unused dicts removed for clarity
     # Group lab batches by (semester, subject_id) for parallel scheduling
     lab_allocs = [a for a in allocations if a['is_lab']]
     lab_groups = {}
@@ -480,11 +591,31 @@ def generate_timetable():
         lab_groups.setdefault(key, []).append(a)
 
     for (sem, sid), group in lab_groups.items():
-        # group is a list of allocations (fid, sid, batch, sem)
-        days = list(DAYS)
-        random.shuffle(days)
+        # Cluster labs on the same days across different semesters where possible.
+        # Get count of distinct semesters already having labs on each day.
+        days_with_labs = conn.execute("""
+            SELECT day, COUNT(DISTINCT t.semester) as lab_count 
+            FROM timetable t JOIN subject s ON t.subject_id = s.id 
+            WHERE s.is_lab=1 GROUP BY day
+        """).fetchall()
+        lab_day_counts = {r['day']: r['lab_count'] for r in days_with_labs}
+        
+        selectable_days = list(DAYS)
+        random.shuffle(selectable_days)
+        # Cluster across semesters: prefer days that already have some labs for other semesters
+        selectable_days.sort(key=lambda d: lab_day_counts.get(d, 0), reverse=True)
+
         placed = False
-        for day in days:
+        for day in selectable_days:
+            # Horizontal Constraint: At most one lab session (of this subject) per semester per day.
+            # (Note: In this system, each lab subject has all its batches scheduled in a single slot block).
+            if conn.execute("""
+                SELECT 1 FROM timetable t 
+                JOIN subject s ON t.subject_id = s.id 
+                WHERE t.day=? AND t.semester=? AND s.is_lab=1
+            """, (day, sem)).fetchone():
+                continue
+
             max_p = SATURDAY_MAX_PERIOD_ID if day == 'Saturday' else 8
             # Look for pairs (p1, p2) in TEACHING_PERIOD_IDS
             pairs = []
@@ -527,6 +658,11 @@ def generate_timetable():
         random.shuffle(days)
         for day in days:
             if assigned_hours >= hours: break
+            
+            # Constraint: 1 subject 1 period per day (horizontal distribution)
+            if conn.execute("SELECT 1 FROM timetable WHERE day=? AND semester=? AND subject_id=?", (day, sem, sid)).fetchone():
+                continue
+                
             max_p = SATURDAY_MAX_PERIOD_ID if day == 'Saturday' else 8
             periods = [p for p in TEACHING_PERIOD_IDS if p <= max_p]
             random.shuffle(periods)
@@ -578,7 +714,7 @@ def view_timetable():
     return render_template('timetable.html',
                            grid=grid, periods=PERIODS, days=DAYS,
                            fixed_map=fixed_map, is_admin=True,
-                           lab_bmap=lab_bmap, current_sem=sem, semesters=SEMESTERS,
+                           lab_bmap=lab_bmap, current_sem=sem, semesters=get_semesters(),
                            sat_max=SATURDAY_MAX_PERIOD_ID)
 
 # ─────────────────────────────────────────────
@@ -650,7 +786,7 @@ def faculty_timetable():
     return render_template('timetable.html',
                            grid=grid, periods=PERIODS, days=DAYS,
                            fixed_map={}, is_admin=False,
-                           lab_bmap={}, semesters=SEMESTERS,
+                           lab_bmap={}, semesters=get_semesters(),
                            sat_max=SATURDAY_MAX_PERIOD_ID)
 
 if __name__ == '__main__':
