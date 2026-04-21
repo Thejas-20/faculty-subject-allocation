@@ -629,15 +629,41 @@ body {
 .break-time, .lunch-time { padding:0.5rem 0.75rem 0.5rem 1rem !important; }
 .break-label { font-size:0.78rem; font-weight:600; color:var(--text-muted); }
 .break-duration { font-size:0.7rem; color:var(--text-muted); }
-.break-cell {
-  background: repeating-linear-gradient(45deg,rgba(100,116,139,0.04),rgba(100,116,139,0.04) 5px,transparent 5px,transparent 10px);
-  text-align:center; font-size:0.72rem; color:var(--text-muted);
-  padding:0.5rem; letter-spacing:0.5px;
+
+.break-cell-merged, .lunch-cell-merged {
+  text-align: center;
+  vertical-align: middle !important;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  position: relative;
+  overflow: hidden;
 }
-.lunch-cell {
-  background: repeating-linear-gradient(45deg,rgba(245,158,11,0.03),rgba(245,158,11,0.03) 5px,transparent 5px,transparent 10px);
-  text-align:center; font-size:0.72rem; color:#92400e;
-  padding:0.6rem; letter-spacing:0.5px;
+
+.break-cell-merged {
+  background: rgba(100,116,139,0.06);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.lunch-cell-merged {
+  background: rgba(245,158,11,0.05);
+  color: #fbbf24;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.break-cell-merged::before, .lunch-cell-merged::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(45deg, rgba(255,255,255,0.03), rgba(255,255,255,0.03) 10px, transparent 10px, transparent 20px);
+  pointer-events: none;
+}
+
+.break-cell-merged span, .lunch-cell-merged span {
+  position: relative;
+  z-index: 1;
 }
 
 /* Timetable cells */
